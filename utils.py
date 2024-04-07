@@ -12,12 +12,12 @@ def preprocess(data: list[dict]):
     `data`: Data in the form of list of dictionaries
 
     ## Returns
-    `inputs`: `np.array` containing external statuses
+    `texts`: `np.array` containing external statuses
     `labels`: `np.array` containing internal statuses
     `unique_labels`: `list` containing unique labels
     `vocab`: `list` of unique words in data including padding and unknown tokens
     """
-    inputs, labels, vocab = [], [], set()
+    texts, labels, vocab = [], [], set()
     pattern = re.compile(r"[^\w\s]+")
     for pair in data:
 
@@ -36,12 +36,12 @@ def preprocess(data: list[dict]):
         all_words = external_status.split()
         vocab.update(all_words)
 
-        inputs.append(external_status)
+        texts.append(external_status)
         labels.append(internal_status)
 
     vocab = ["[PAD]", "[UNK]"] + sorted(list(vocab))
     
-    return np.array(inputs), np.array(labels), np.unique(labels).tolist(), vocab
+    return np.array(texts), np.array(labels), np.unique(labels).tolist(), vocab
 
 def train_test_split(inputs, labels, train_ratio, shuffle=False):
     """
@@ -69,7 +69,7 @@ def train_test_split(inputs, labels, train_ratio, shuffle=False):
     split_index = int(train_ratio * size)
     return inputs[:split_index], labels[:split_index], inputs[split_index:], labels[split_index:]
 
-def texts2tensor(texts, vocab, max_tokens):
+def tokenize(texts, vocab, max_tokens):
     """
     Converts a list of texts to a tensor.
 
@@ -113,4 +113,29 @@ def labels2tensor(labels, unique_labels):
         tensor.append(unique_labels.index(label))
     return torch.tensor(tensor)
 
+def dynamically_batch(texts, labels, batch_size, vocab, unique_labels, max_tokens):
+    """
+    Dynamically batches texts and labels.
 
+    ## Parameters
+    `texts`: Texts
+    `labels`: Labels
+    `batch_size`: Maximum number of texts in a batch
+    `vocab`: `list` containing unique words in texts
+    `unique_labels`: `list` containing unique_labels
+    `max_tokens`: Maximum tokens in tensor
+
+    ## Returns
+    `batches`: Batched and vectorized texts and labels
+    """
+    lengths_list = list(map(lambda x: len(x.split()), texts))
+    sort_idx = np.argsort(lengths_list)
+    texts, labels = texts[sort_idx], labels[sort_idx]
+    batches = []
+    for i in range(0, len(texts), batch_size):
+        batch = (
+            tokenize(texts[i : i + batch_size], vocab, max_tokens),
+            labels2tensor(labels[i : i + batch_size], unique_labels)
+        )
+        batches.append(batch)
+    return batches
