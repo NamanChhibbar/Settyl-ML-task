@@ -1,8 +1,59 @@
 """
-Utility functions for main.ipynb
+Utility functions and classes for main.ipynb
 """
 
 import numpy as np, re, torch
+from torch import nn
+
+class Model(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, num_classes, hidden_size, lstm_layers, lrelu_slope=0.1, dropout=0):
+        super().__init__()
+
+        # Dropout layer
+        self.dropout = nn.Dropout(dropout) if 0 < dropout < 1 else nn.Dropout(0)
+
+        # Embedding layer
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+
+        # Leaky rectified linear unit
+        self.lrelu = nn.LeakyReLU(lrelu_slope)
+
+        # LSTM layer
+        self.lstm = nn.LSTM(embedding_dim, hidden_size, lstm_layers, dropout=dropout)
+
+        # Fully connected dense layer
+        self.dense = nn.Linear(hidden_size, num_classes)
+
+        # Cross Entropy loss function for multiclass classification
+        self.loss = nn.CrossEntropyLoss()
+    
+    def forward(self, x, labels=None, training=False):
+
+        # Create embeddings
+        x = self.embedding(x)
+
+        # Pass through LSTM
+        x, _ = self.lstm(x)
+
+        # Extract last output of LSTM
+        x = x[:, -1, :]
+
+        # Drop logits if training
+        x = self.dropout(x) if training else x
+
+        # Pass through dense layer
+        x = self.dense(x)
+
+        # Apply leaky ReLU
+        x = self.lrelu(x)
+
+        # Predict classes
+        predictions = torch.argmax(x, dim=-1)
+
+        # Calculate loss if labels are given
+        loss = None if labels is None else self.loss(x, labels)
+
+        return {"logits": x, "loss": loss, "predictions": predictions}
 
 def preprocess(data: list[dict]):
     """
@@ -18,7 +69,8 @@ def preprocess(data: list[dict]):
     `vocab`: `list` of unique words in data including padding and unknown tokens
     """
     texts, labels, vocab = [], [], set()
-    pattern = re.compile(r"[^\w\s]+")
+    non_alphanum = re.compile(r"[^\w\s]+")
+    number = re.compile(r"[0-9]+")
     for pair in data:
 
         # Extract external and internal statuses
@@ -29,8 +81,12 @@ def preprocess(data: list[dict]):
         internal_status = internal_status.strip().lower()
 
         # Remove any non-alphanumeric characters
-        external_status = pattern.sub("", external_status)
-        internal_status = pattern.sub("", internal_status)
+        external_status = non_alphanum.sub("", external_status)
+        internal_status = non_alphanum.sub("", internal_status)
+
+        # Replace any number by [NUM]
+        external_status = number.sub("[NUM]", external_status)
+        internal_status = number.sub("[NUM]", internal_status)
 
         # Update vocab
         all_words = external_status.split()
@@ -60,18 +116,19 @@ def train_test_split(inputs, labels, train_ratio, shuffle=False):
     `test_labels`: Labels in test set
     """
     size = len(inputs)
-    if size != len(labels):
-        raise Exception("Inputs and labels have different lengths")
+
+    # Shuffle data if shuffle is True
     if shuffle:
         permutation = np.random.permutation(size)
         inputs = inputs[permutation]
         labels = labels[permutation]
+    
     split_index = int(train_ratio * size)
     return inputs[:split_index], labels[:split_index], inputs[split_index:], labels[split_index:]
 
 def tokenize(texts, vocab, max_tokens):
     """
-    Converts a list of texts to a tensor.
+    Converts a list of preprocessed texts to a tensor.
 
     ## Parameters
     `texts`: `list` containing texts
