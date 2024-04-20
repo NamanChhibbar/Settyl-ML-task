@@ -2,7 +2,9 @@
 Utility functions and classes for main.ipynb
 """
 
-import numpy as np, re, torch
+import re
+import numpy as np
+import torch
 from torch import nn
 
 class Model(nn.Module):
